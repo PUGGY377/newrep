@@ -1,0 +1,34 @@
+# secrets
+.env
+secrets/
+*.pem
+*.key
+
+# python
+__pycache__/
+*.pyc
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# data / db
+*.duckdb
+*.sqlite
+*.sqlite3
+data/raw/
+data/processed/
+*.log
+audit_logs/
+
+# test / tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store

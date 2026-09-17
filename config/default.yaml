@@ -1,0 +1,102 @@
+# Default configuration for the Kalshi quant system.
+# Values here are conservative starting points. Override via config/local.yaml
+# (gitignored) or environment-specific files, never by editing this file for
+# personal/live settings.
+
+environment: demo   # demo | prod -- must match KALSHI_ENVIRONMENT; prod also requires execution.mode=live
+
+bankroll:
+  starting_capital_usd: 500.0
+  currency: USD
+
+# --- Category / starting scope ---
+categories:
+  enabled:
+    - sports
+  sports:
+    leagues: ["NFL", "NBA", "CFB", "CBB"]
+
+# --- Edge / signal layer ---
+signal:
+  min_edge_after_fees: 0.03        # minimum model_prob - market_prob (net of fees+slippage) to consider a trade
+  min_confidence: 0.60             # forecaster's own confidence score (1 - normalized variance), 0-1
+  max_market_staleness_seconds: 120
+
+# --- Risk / position sizing layer ---
+# Position size is computed mathematically per-trade (see risk/kelly.py,
+# risk/portfolio.py) from Kelly edge, model uncertainty, and portfolio
+# covariance -- NOT from a fixed percentage. The values below are hard
+# safety ceilings / backstops only: they clip whatever the math produces,
+# they do not drive sizing directly.
+risk:
+  kelly:
+    # f_shrunk = f_kelly / (1 + shrinkage_k * variance(p_hat))
+    # shrinkage_k is fit/validated during backtesting (see sensitivity analysis);
+    # this is the starting prior, not a hand-picked final answer.
+    shrinkage_k: 8.0
+    # Absolute upper bound on the Kelly fraction ever used, applied AFTER
+    # shrinkage. Full Kelly (1.0) is never used against a model that hasn't
+    # been proven calibrated live; this is a backstop against a
+    # miscalibrated model or a data bug producing an extreme edge.
+    max_kelly_fraction: 0.5
+
+  portfolio:
+    # Target annualized portfolio variance used by the variance-budgeting
+    # step in risk/portfolio.py to size correlated clusters. Expressed as a
+    # fraction of bankroll^2; tuned via backtest sensitivity analysis.
+    target_portfolio_variance_frac: 0.04
+    # Hard ceilings (backstops), fraction of current bankroll:
+    max_fraction_per_market: 0.25
+    max_fraction_per_category: 0.60
+    max_fraction_total_exposure: 0.85
+
+  circuit_breaker:
+    # Computed risk-of-ruin threshold is the primary trigger (see
+    # risk/circuit_breaker.py). lookback_trades bounds the sample used to
+    # estimate the realized edge/variance distribution driving that
+    # computation. max_drawdown_hard_stop is a non-negotiable backstop that
+    # halts new position-opening regardless of what the risk-of-ruin model
+    # says, in case the model itself is wrong.
+    lookback_trades: 50
+    risk_of_ruin_halt_threshold: 0.05   # halt if P(ruin | current stats) exceeds 5%
+    max_drawdown_hard_stop: 0.40        # absolute backstop: halt at 40% drawdown no matter what
+
+  liquidity:
+    max_orderbook_depth_fraction: 0.25   # never take more than 25% of visible depth at a price level
+    max_acceptable_slippage: 0.02        # abandon/size down if slippage would exceed 2 cents of probability
+
+# --- Fees ---
+# Kalshi's fee schedule is fetched/confirmed at runtime (signal/fees.py) and
+# cached with a version + fetched_at timestamp -- never hardcoded as truth
+# long-term. The value below is a fallback ONLY used if the live schedule is
+# unavailable, and is intentionally conservative (overstated) so we never
+# understate costs when the source can't be reached.
+fees:
+  fallback_taker_fee_formula: "ceil(0.07 * contracts * price * (1 - price))"
+  fallback_schedule_version: "2024-fallback"
+
+# --- Backtest ---
+backtest:
+  walk_forward:
+    train_window_days: 180
+    test_window_days: 30
+    step_days: 30
+  initial_capital_usd: 500.0
+
+# --- Execution ---
+execution:
+  mode: paper          # paper | live -- live additionally requires KALSHI_LIVE_TRADING_CONFIRMED=true env var
+  order_type: limit
+  max_single_order_usd: 100.0
+  max_daily_loss_usd: 50.0
+  reconcile_interval_seconds: 60
+
+# --- Monitoring ---
+monitoring:
+  dashboard_port: 8501
+  calibration_drift_alert_threshold: 0.08
+  weekly_report_day: "Sunday"
+
+logging:
+  level: INFO
+  audit_log_dir: "audit_logs"
