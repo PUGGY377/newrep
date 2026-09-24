@@ -32,6 +32,7 @@ from typing import Any, Iterator
 
 import requests
 import structlog
+from dotenv import load_dotenv
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from tenacity import (
@@ -77,17 +78,26 @@ class KalshiCredentials:
 
     @classmethod
     def from_env(cls) -> "KalshiCredentials":
+        """Key material comes from KALSHI_PRIVATE_KEY (PEM text, e.g. a cloud
+        environment variable) or KALSHI_PRIVATE_KEY_PATH (a local file)."""
+        load_dotenv(override=False)
         key_id = os.environ.get("KALSHI_API_KEY_ID")
+        key_pem = os.environ.get("KALSHI_PRIVATE_KEY")
         key_path = os.environ.get("KALSHI_PRIVATE_KEY_PATH")
-        if not key_id or not key_path:
+        if not key_id or not (key_pem or key_path):
             raise RuntimeError(
-                "KALSHI_API_KEY_ID and KALSHI_PRIVATE_KEY_PATH must be set "
-                "(see .env.example). Refusing to start with missing credentials."
+                "KALSHI_API_KEY_ID and one of KALSHI_PRIVATE_KEY / KALSHI_PRIVATE_KEY_PATH "
+                "must be set (see .env.example). Refusing to start with missing credentials."
             )
-        with open(key_path, "rb") as f:
-            private_key = serialization.load_pem_private_key(f.read(), password=None)
+        if key_pem:
+            # Single-line env var UIs often store newlines as a literal "\n".
+            pem_bytes = key_pem.replace("\\n", "\n").strip().encode("utf-8") + b"\n"
+        else:
+            with open(key_path, "rb") as f:  # type: ignore[arg-type]
+                pem_bytes = f.read()
+        private_key = serialization.load_pem_private_key(pem_bytes, password=None)
         if not isinstance(private_key, rsa.RSAPrivateKey):
-            raise RuntimeError(f"Key at {key_path} is not an RSA private key")
+            raise RuntimeError("Configured Kalshi key is not an RSA private key")
         return cls(key_id=key_id, private_key=private_key)
 
 
